@@ -1,20 +1,45 @@
 const canvas = document.getElementById("heartCanvas");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Configuración responsiva
+function setCanvasSize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
 
+setCanvasSize();
+
+// Variables principales
 const particles = [];
 const heartOutlines = [];
 const orbitingHearts = [];
-const heartSize = 12; // Tamaño de las partículas en forma de corazón
+const fallingHearts = [];
 const centerX = canvas.width / 2;
 const centerY = canvas.height / 2 - 50;
 let heartFormed = false;
+let pulsate = 0;
+let pulsateDirection = 0.02;
 
-// Función para calcular puntos en el contorno de un corazón
+// Configuración según tamaño de pantalla
+const isMobile = window.innerWidth < 768;
+const heartSize = isMobile ? 8 : 12; // Tamaño más pequeño en móviles
+const particleDensity = isMobile ? 0.15 : 0.1; // Más densidad = menos partículas
+
+// Colores para los corazones
+const heartColors = [
+    "#FF3366", // Rosa intenso
+    "#FF0033", // Rojo brillante
+    "#FF6699", // Rosa claro
+    "#FF0066", // Fucsia
+    "#CC0033"  // Rojo oscuro
+];
+
+// Función para calcular puntos en el contorno de un corazón con más detalle
 function generateHeartPoints() {
-    for (let t = 0; t < Math.PI * 2; t += 0.1) {
+    heartOutlines.length = 0; // Limpiar puntos anteriores
+    const step = isMobile ? 0.15 : 0.08; // Paso más grande en móviles = menos puntos
+
+    for (let t = 0; t < Math.PI * 2; t += step) {
         let x = 16 * Math.pow(Math.sin(t), 3);
         let y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
         heartOutlines.push({
@@ -24,17 +49,34 @@ function generateHeartPoints() {
     }
 }
 
-// Dibuja un pequeño corazón
-function drawHeart(x, y, size, color) {
+// Función mejorada para dibujar un corazón
+function drawHeart(x, y, size, color, glow = false) {
+    if (glow) {
+        ctx.shadowBlur = size * 2;
+        ctx.shadowColor = color;
+    }
+
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.bezierCurveTo(x - size, y - size, x - size * 2, y + size / 2, x, y + size);
-    ctx.bezierCurveTo(x + size * 2, y + size / 2, x + size, y - size, x, y);
+    ctx.bezierCurveTo(
+        x - size, y - size,
+        x - size * 2, y + size / 2,
+        x, y + size
+    );
+    ctx.bezierCurveTo(
+        x + size * 2, y + size / 2,
+        x + size, y - size,
+        x, y
+    );
     ctx.fill();
+
+    if (glow) {
+        ctx.shadowBlur = 0;
+    }
 }
 
-// Clase para las partículas en forma de corazón
+// Clase para las partículas en forma de corazón mejorada
 class HeartParticle {
     constructor(x, y) {
         this.x = Math.random() * canvas.width;
@@ -44,16 +86,32 @@ class HeartParticle {
         this.speedX = (Math.random() - 0.5) * 2;
         this.speedY = (Math.random() - 0.5) * 2;
         this.alpha = 0;
+        this.size = 3 + Math.random() * 3;
+        this.color = heartColors[Math.floor(Math.random() * heartColors.length)];
+        this.pulse = Math.random() * Math.PI * 2; // Fase inicial para pulsación
     }
 
     update() {
         if (!heartFormed) {
-            this.x += (this.targetX - this.x) * 0.02;
-            this.y += (this.targetY - this.y) * 0.02;
+            // Movimiento más suave hacia la posición objetivo
+            this.x += (this.targetX - this.x) * (0.01 + Math.random() * 0.03);
+            this.y += (this.targetY - this.y) * (0.01 + Math.random() * 0.03);
+
+            // Verificar si suficientes partículas han llegado a su posición
             if (Math.abs(this.x - this.targetX) < 1 && Math.abs(this.y - this.targetY) < 1) {
-                heartFormed = true;
-                createOrbitingHearts();
+                this.x = this.targetX;
+                this.y = this.targetY;
+                if (!heartFormed && particles.filter(p => Math.abs(p.x - p.targetX) < 1).length > particles.length * 0.85) {
+                    heartFormed = true;
+                    createOrbitingHearts();
+                    createFallingHearts();
+                }
             }
+        } else {
+            // Pequeño movimiento aleatorio para las partículas una vez formado el corazón
+            this.x += Math.sin(this.pulse) * 0.2;
+            this.y += Math.cos(this.pulse) * 0.2;
+            this.pulse += 0.05;
         }
 
         if (this.alpha < 1) {
@@ -63,18 +121,23 @@ class HeartParticle {
 
     draw() {
         ctx.globalAlpha = this.alpha;
-        drawHeart(this.x, this.y, 5, "white");
+        // Tamaño variable para efecto de latido
+        const pulsingSize = this.size + Math.sin(pulsate + this.pulse) * 0.5;
+        drawHeart(this.x, this.y, pulsingSize, this.color, true);
         ctx.globalAlpha = 1;
     }
 }
 
-// Corazones orbitando alrededor del contorno
+// Corazones orbitando alrededor del contorno - Mejorados
 class OrbitingHeart {
     constructor(angle) {
         this.angle = angle;
-        this.radius = 20;
-        this.speed = 0.02;
+        this.radius = 10 + Math.random() * 15;
+        this.speed = 0.01 + Math.random() * 0.03;
         this.index = Math.floor(Math.random() * heartOutlines.length);
+        this.size = 3 + Math.random() * 3;
+        this.color = heartColors[Math.floor(Math.random() * heartColors.length)];
+        this.pulse = Math.random() * Math.PI * 2;
     }
 
     update() {
@@ -82,25 +145,92 @@ class OrbitingHeart {
         let point = heartOutlines[this.index];
         this.x = point.x + Math.cos(this.angle) * this.radius;
         this.y = point.y + Math.sin(this.angle) * this.radius;
+        this.pulse += 0.1;
     }
 
     draw() {
-        drawHeart(this.x, this.y, 5, "red");
+        const pulsingSize = this.size + Math.sin(pulsate + this.pulse) * 0.5;
+        drawHeart(this.x, this.y, pulsingSize, this.color, true);
     }
 }
 
-// Inicializar partículas
+// Nueva clase: Corazones que caen
+class FallingHeart {
+    constructor() {
+        this.x = Math.random() * canvas.width;
+        this.y = -20;
+        this.size = 2 + Math.random() * 5;
+        this.speed = 0.5 + Math.random() * 2;
+        this.color = heartColors[Math.floor(Math.random() * heartColors.length)];
+        this.rotate = Math.random() * Math.PI * 2;
+        this.rotateSpeed = (Math.random() - 0.5) * 0.1;
+        this.oscillateX = Math.random() * 3;
+        this.oscillateXSpeed = 0.02 + Math.random() * 0.03;
+        this.oscillatePhase = Math.random() * Math.PI * 2;
+    }
+
+    update() {
+        this.y += this.speed;
+        this.x += Math.sin(this.oscillatePhase) * this.oscillateX;
+        this.oscillatePhase += this.oscillateXSpeed;
+        this.rotate += this.rotateSpeed;
+
+        // Reciclar corazones que salen de la pantalla
+        if (this.y > canvas.height + 20) {
+            this.y = -20;
+            this.x = Math.random() * canvas.width;
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotate);
+        drawHeart(0, 0, this.size, this.color, true);
+        ctx.restore();
+    }
+}
+
+// Inicializar partículas con densidad adaptativa
 function initParticles() {
+    particles.length = 0; // Limpiar partículas existentes
     generateHeartPoints();
-    heartOutlines.forEach((point) => {
+
+    // Usar menos partículas en dispositivos móviles para mejor rendimiento
+    const skipFactor = Math.ceil(particleDensity * heartOutlines.length);
+
+    for (let i = 0; i < heartOutlines.length; i += skipFactor) {
+        const point = heartOutlines[i];
         particles.push(new HeartParticle(point.x, point.y));
-    });
+    }
 }
 
 // Crear corazones en órbita una vez que el corazón principal esté formado
 function createOrbitingHearts() {
-    for (let i = 0; i < 20; i++) {
-        orbitingHearts.push(new OrbitingHeart(i * (Math.PI * 2 / 20)));
+    const orbitCount = isMobile ? 15 : 30;
+    for (let i = 0; i < orbitCount; i++) {
+        orbitingHearts.push(new OrbitingHeart(i * (Math.PI * 2 / orbitCount)));
+    }
+}
+
+// Crear corazones que caen
+function createFallingHearts() {
+    const count = isMobile ? 20 : 50;
+    for (let i = 0; i < count; i++) {
+        fallingHearts.push(new FallingHeart());
+    }
+}
+
+// Efecto de brillo en el texto
+function glowText() {
+    const messageText = document.querySelector(".message h1");
+    if (messageText) {
+        messageText.style.textShadow = `0 0 ${5 + Math.sin(pulsate) * 3}px rgba(255, 255, 255, 0.7)`;
+
+        const susyText = document.querySelector(".red-text");
+        if (susyText) {
+            susyText.style.textShadow = `0 0 ${8 + Math.sin(pulsate) * 5}px rgba(255, 0, 0, 0.8)`;
+        }
     }
 }
 
@@ -108,16 +238,33 @@ function createOrbitingHearts() {
 function animate() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Actualizar efecto de pulsación
+    pulsate += pulsateDirection;
+    if (pulsate > 1 || pulsate < 0) {
+        pulsateDirection = -pulsateDirection;
+    }
+
+    // Dibujar partículas del corazón principal
     particles.forEach((particle) => {
         particle.update();
         particle.draw();
     });
 
+    // Dibujar corazones orbitando
     if (heartFormed) {
         orbitingHearts.forEach((heart) => {
             heart.update();
             heart.draw();
         });
+
+        // Dibujar corazones cayendo
+        fallingHearts.forEach((heart) => {
+            heart.update();
+            heart.draw();
+        });
+
+        // Aplicar efecto de brillo al texto
+        glowText();
     }
 
     requestAnimationFrame(animate);
@@ -125,11 +272,16 @@ function animate() {
 
 // Ajuste de tamaño del canvas en caso de cambio de ventana
 window.addEventListener("resize", () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    setCanvasSize();
     particles.length = 0;
     orbitingHearts.length = 0;
+    fallingHearts.length = 0;
     heartFormed = false;
+
+    // Reinicio de variables centrales
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2 - 50;
+
     initParticles();
 });
 
